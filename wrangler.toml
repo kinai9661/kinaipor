@@ -1,0 +1,11 @@
+name = "kinaipor"
+main = "src/index.ts"
+compatibility_date = "2025-12-26"
+
+# Variables
+[vars]
+ENVIRONMENT = "production"
+
+# Assets configuration for static files
+[site]
+bucket = "./dist"
