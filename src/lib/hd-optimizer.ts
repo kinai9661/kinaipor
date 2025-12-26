@@ -43,14 +43,14 @@ export const QUALITY_MODES = {
 
 const HD_NEGATIVE = 'blurry, low quality, distorted, ugly, bad anatomy, low resolution, pixelated, artifacts, noise';
 
-const MODEL_OPTIMAL_STEPS = {
+const MODEL_OPTIMAL_STEPS: Record<Model, number> = {
   zimage: 15,
   flux: 20,
   turbo: 8,
   kontext: 25
 };
 
-const MODEL_BASE_GUIDANCE = {
+const MODEL_BASE_GUIDANCE: Record<Model, number> = {
   zimage: 7.0,
   flux: 7.5,
   turbo: 3.0,
