@@ -11,6 +11,7 @@ import { CONFIG, type Model, type Style, type SizePreset } from '@/lib/flux-conf
 import { Translator } from '@/lib/translator';
 import ImageUpload from './ImageUpload';
 import AdvancedSettings from './AdvancedSettings';
+import { type UploadedImage } from '@/lib/image-utils';
 import { Loader2, Sparkles, Languages } from 'lucide-react';
 
 interface FluxGeneratorProps {
@@ -37,13 +38,13 @@ export default function FluxGenerator({ reuseData }: FluxGeneratorProps) {
   const [enhance, setEnhance] = useState(false);
   
   // 圖生圖
-  const [referenceImages, setReferenceImages] = useState<string[]>([]);
+  const [referenceImages, setReferenceImages] = useState<UploadedImage[]>([]);
   
   // 翻譯
-  const [enableTranslation, setEnableTranslation] = useState(true);
+  const [enableTranslation, setEnableTranslation] = useState(false);
   const [isTranslating, setIsTranslating] = useState(false);
   const [translatedPrompt, setTranslatedPrompt] = useState('');
-  const translator = new Translator('', false); // 可配置 Workers endpoint
+  const translator = new Translator('', false);
 
   // 重用數據
   useEffect(() => {
@@ -101,6 +102,9 @@ export default function FluxGenerator({ reuseData }: FluxGeneratorProps) {
       // 使用翻譯後的提示詞（如果有）
       const finalPrompt = translatedPrompt || prompt;
       
+      // Extract reference image URLs
+      const referenceUrls = referenceImages.map(img => img.url);
+      
       const results = await client.generate({
         prompt: finalPrompt,
         model,
@@ -111,7 +115,7 @@ export default function FluxGenerator({ reuseData }: FluxGeneratorProps) {
         negativePrompt,
         qualityMode,
         numOutputs,
-        referenceImages,
+        referenceImages: referenceUrls,
         guidance,
         steps,
         enhance,
@@ -418,6 +422,9 @@ blurry, low quality, distorted"
             <p className="text-xs">質量：{qualityMode}</p>
             {autoOptimize && <p className="text-xs">⚙️ 自動優化：開啟</p>}
             {enhance && <p className="text-xs">✨ HD 增強：開啟</p>}
+            {referenceImages.length > 0 && (
+              <p className="text-xs">🖼️ 參考圖: {referenceImages.length} 張</p>
+            )}
           </div>
         </CardContent>
       </Card>
