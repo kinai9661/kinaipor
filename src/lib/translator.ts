@@ -1,89 +1,63 @@
-// Chinese to English Translation using Cloudflare Workers AI
-// You can deploy this as a Cloudflare Worker for translation
-
-export interface TranslationOptions {
-  text: string;
-  sourceLang?: string;
-  targetLang?: string;
-}
+// Chinese to English Translation Service
+// Supports Workers AI and fallback translation methods
 
 export interface TranslationResult {
-  translatedText: string;
-  originalText: string;
-  detected?: string;
+  original: string;
+  translated: string;
+  detected_language: string;
+  confidence: number;
+  provider: string;
 }
 
-export class Translator {
-  private workerEndpoint: string;
-  private enabled: boolean;
+interface WorkersAIConfig {
+  enabled: boolean;
+  accountId?: string;
+  apiToken?: string;
+  model: string;
+}
 
-  constructor(workerEndpoint: string = '', enabled: boolean = false) {
-    this.workerEndpoint = workerEndpoint;
-    this.enabled = enabled && !!workerEndpoint;
-  }
+const WORKERS_AI_CONFIG: WorkersAIConfig = {
+  enabled: false, // 需要用戶配置
+  model: '@cf/meta/m2m100-1.2b'
+};
 
-  // 判斷是否为中文
-  private isChinese(text: string): boolean {
-    // 中文字符范围：\u4e00-\u9fff
-    const chineseRegex = /[\u4e00-\u9fff]/;
-    return chineseRegex.test(text);
-  }
+export class TranslationService {
+  private workersAIEndpoint?: string;
 
-  // 简单的本地翻译（后备）
-  private simpleTranslate(text: string): string {
-    // 常见艺术词汇对照表
-    const commonPhrases: Record<string, string> = {
-      '一个': 'a',
-      '一位': 'a',
-      '美丽的': 'beautiful',
-      '漂亮的': 'beautiful',
-      '可爱的': 'cute',
-      '超现实': 'surreal',
-      '幻想': 'fantasy',
-      '科幻': 'sci-fi',
-      '动漫': 'anime',
-      '漫画': 'manga',
-      '油画': 'oil painting',
-      '水彩': 'watercolor',
-      '素描': 'sketch',
-      '风景': 'landscape',
-      '人物': 'character portrait',
-      '猫咖': 'cat',
-      '狗': 'dog',
-      '花': 'flower',
-      '山': 'mountain',
-      '海': 'ocean',
-      '森林': 'forest',
-      '城市': 'city',
-      '晚隈': 'sunset',
-      '星空': 'starry sky',
-      '夜景': 'night scene',
-      '白天': 'daytime',
-      '高清': 'high quality, detailed',
-      '细节': 'detailed',
-      '真实': 'realistic',
-      '写实': 'photorealistic',
-      '艺术': 'artistic'
-    };
-
-    let translated = text;
-    for (const [cn, en] of Object.entries(commonPhrases)) {
-      translated = translated.replace(new RegExp(cn, 'g'), en);
+  constructor(
+    accountId?: string,
+    apiToken?: string
+  ) {
+    if (accountId && apiToken) {
+      this.workersAIEndpoint = `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${WORKERS_AI_CONFIG.model}`;
+      WORKERS_AI_CONFIG.enabled = true;
+      WORKERS_AI_CONFIG.accountId = accountId;
+      WORKERS_AI_CONFIG.apiToken = apiToken;
     }
-
-    return translated;
   }
 
-  // 使用 Workers AI 翻译
-  async translateWithWorkers(text: string): Promise<string> {
-    if (!this.enabled || !this.workerEndpoint) {
-      return this.simpleTranslate(text);
+  /**
+   * 檢測是否需要翻譯（含有中文字符）
+   */
+  static needsTranslation(text: string): boolean {
+    // 檢測 CJK (Chinese, Japanese, Korean) 字符
+    const cjkRegex = /[\u4e00-\u9fff\u3400-\u4dbf\u{20000}-\u{2a6df}\u{2a700}-\u{2b73f}\u{2b740}-\u{2b81f}\u{2b820}-\u{2ceaf}\uf900-\ufaff\u3300-\u33ff]/u;
+    return cjkRegex.test(text);
+  }
+
+  /**
+   * 使用 Workers AI 翻譯
+   */
+  async translateWithWorkersAI(text: string): Promise<TranslationResult> {
+    if (!WORKERS_AI_CONFIG.enabled || !this.workersAIEndpoint || !WORKERS_AI_CONFIG.apiToken) {
+      throw new Error('Workers AI 未配置');
     }
 
     try {
-      const response = await fetch(`${this.workerEndpoint}/translate`, {
+      const response = await fetch(this.workersAIEndpoint, {
         method: 'POST',
         headers: {
+          'Authorization': `Bearer ${WORKERS_AI_CONFIG.apiToken}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
@@ -94,92 +68,155 @@ export class Translator {
       });
 
       if (!response.ok) {
-        throw new Error('Translation failed');
+        throw new Error(`Workers AI 錯誤: ${response.status}`);
       }
 
-      const result = await response.json();
-      return result.translated_text || text;
+      const data = await response.json();
+
+      return {
+        original: text,
+        translated: data.result.translated_text || text,
+        detected_language: 'zh',
+        confidence: 0.95,
+        provider: 'workers-ai'
+      };
     } catch (error) {
-      console.warn('Workers AI translation failed, using simple translation:', error);
-      return this.simpleTranslate(text);
+      console.error('Workers AI 翻譯失敗:', error);
+      throw error;
     }
   }
 
-  // 主翻译方法
-  async translate(options: TranslationOptions): Promise<TranslationResult> {
-    const { text, sourceLang = 'auto', targetLang = 'en' } = options;
+  /**
+   * 本地簡單翻譯（Fallback）
+   */
+  static translateLocally(text: string): TranslationResult {
+    // 簡單的預設翻譯映射
+    const commonPhrases: Record<string, string> = {
+      '一個': 'a',
+      '可愛的': 'cute',
+      '美麗的': 'beautiful',
+      '漂亮的': 'pretty',
+      '帥氣的': 'handsome',
+      '女孩': 'girl',
+      '男孩': 'boy',
+      '貓咄': 'cat',
+      '狗': 'dog',
+      '花': 'flower',
+      '樹': 'tree',
+      '山': 'mountain',
+      '海': 'ocean',
+      '天空': 'sky',
+      '雲': 'cloud',
+      '太陽': 'sun',
+      '月亮': 'moon',
+      '星星': 'star',
+      '風景': 'scenery',
+      '城市': 'city',
+      '房子': 'house',
+      '車': 'car',
+      '飛機': 'airplane',
+      '船': 'ship',
+      '日落': 'sunset',
+      '日出': 'sunrise',
+      '夏天': 'summer',
+      '冬天': 'winter',
+      '春天': 'spring',
+      '秋天': 'autumn',
+      '晚上': 'night',
+      '白天': 'day',
+      '紅色': 'red',
+      '藍色': 'blue',
+      '綠色': 'green',
+      '黃色': 'yellow',
+      '紫色': 'purple',
+      '粉紅色': 'pink',
+      '黑色': 'black',
+      '白色': 'white'
+    };
 
-    // 如果不是中文，直接返回
-    if (!this.isChinese(text)) {
-      return {
-        translatedText: text,
-        originalText: text,
-        detected: 'en'
-      };
+    let translated = text;
+
+    // 替換常用詞彙
+    for (const [zh, en] of Object.entries(commonPhrases)) {
+      translated = translated.replace(new RegExp(zh, 'g'), en);
     }
 
-    // 尝试使用 Workers AI
-    const translatedText = await this.translateWithWorkers(text);
+    // 如果沒有變化，直接返回原文 (讓 AI 自己處理)
+    if (translated === text) {
+      console.warn('本地翻譯無法處理，保持原文');
+    }
 
     return {
-      translatedText,
-      originalText: text,
-      detected: 'zh'
+      original: text,
+      translated: translated === text ? text : translated,
+      detected_language: 'zh',
+      confidence: 0.5,
+      provider: 'local-fallback'
     };
   }
 
-  // 检查是否需要翻译
-  needsTranslation(text: string): boolean {
-    return this.isChinese(text);
+  /**
+   * 自動翻譯 (嘗試 Workers AI，失敗則使用本地)
+   */
+  async translate(text: string): Promise<TranslationResult> {
+    if (!TranslationService.needsTranslation(text)) {
+      return {
+        original: text,
+        translated: text,
+        detected_language: 'en',
+        confidence: 1.0,
+        provider: 'none'
+      };
+    }
+
+    // 嘗試 Workers AI
+    if (WORKERS_AI_CONFIG.enabled) {
+      try {
+        return await this.translateWithWorkersAI(text);
+      } catch (error) {
+        console.warn('Workers AI 翻譯失敗，使用本地翻譯:', error);
+      }
+    }
+
+    // Fallback 到本地翻譯
+    return TranslationService.translateLocally(text);
+  }
+
+  /**
+   * 批量翻譯
+   */
+  async batchTranslate(texts: string[]): Promise<TranslationResult[]> {
+    const results: TranslationResult[] = [];
+
+    for (const text of texts) {
+      try {
+        const result = await this.translate(text);
+        results.push(result);
+        
+        // 防止 API 速率限制
+        if (WORKERS_AI_CONFIG.enabled) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+      } catch (error) {
+        console.error(`翻譯失敗: ${text}`, error);
+        results.push({
+          original: text,
+          translated: text,
+          detected_language: 'unknown',
+          confidence: 0,
+          provider: 'error'
+        });
+      }
+    }
+
+    return results;
   }
 }
 
-// 默认实例（未启用）
-export const defaultTranslator = new Translator('', false);
+// 全局翻譯實例
+export const translator = new TranslationService();
 
-// Cloudflare Workers 翻译 Worker 代码示例
-// 你可以将此代码部署为 Cloudflare Worker
-/*
-export default {
-  async fetch(request, env) {
-    if (request.method === 'OPTIONS') {
-      return new Response(null, {
-        headers: {
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Methods': 'POST, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type'
-        }
-      });
-    }
-
-    if (request.method !== 'POST') {
-      return new Response('Method not allowed', { status: 405 });
-    }
-
-    const { text, source_lang, target_lang } = await request.json();
-
-    try {
-      const response = await env.AI.run('@cf/meta/m2m100-1.2b', {
-        text,
-        source_lang: source_lang || 'zh',
-        target_lang: target_lang || 'en'
-      });
-
-      return Response.json(
-        { translated_text: response.translated_text },
-        {
-          headers: {
-            'Access-Control-Allow-Origin': '*',
-            'Content-Type': 'application/json'
-          }
-        }
-      );
-    } catch (error) {
-      return Response.json(
-        { error: 'Translation failed', message: error.message },
-        { status: 500, headers: { 'Access-Control-Allow-Origin': '*' } }
-      );
-    }
-  }
-};
-*/
+// 配置函數
+export function configureTranslator(accountId: string, apiToken: string): TranslationService {
+  return new TranslationService(accountId, apiToken);
+}
