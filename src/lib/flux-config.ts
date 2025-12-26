@@ -1,7 +1,7 @@
 // Flux AI Pro Configuration - Complete 45+ Styles
 export const CONFIG = {
   PROJECT_NAME: "Flux-AI-Pro",
-  PROJECT_VERSION: "9.6.1-extended-styles",
+  PROJECT_VERSION: "9.6.2-advanced",
   FETCH_TIMEOUT: 120000,
   MAX_RETRIES: 3,
   
@@ -24,8 +24,8 @@ export const CONFIG = {
   PROVIDERS: {
     pollinations: {
       name: "Pollinations.ai",
-      endpoint: "https://gen.pollinations.ai",
-      pathPrefix: "/image",
+      endpoint: "https://image.pollinations.ai",
+      pathPrefix: "/prompt",
       type: "direct" as const,
       enabled: true,
       default: true,
@@ -265,7 +265,7 @@ export const CONFIG = {
       negative: "modern, futuristic, clean, vibrant",
       category: "visual",
       icon: "📻",
-      description: "復古懷舊褪色效果"
+      description: "復古懷舊褮色效果"
     },
     steampunk: {
       name: "蒸汽朋克",
@@ -432,6 +432,10 @@ export interface GenerationOptions {
   qualityMode?: 'economy' | 'standard' | 'ultra';
   numOutputs?: number;
   referenceImages?: string[];
+  guidance?: number;
+  steps?: number;
+  enhance?: boolean;
+  autoOptimize?: boolean;
 }
 
 export interface GenerationResult {
@@ -442,4 +446,9 @@ export interface GenerationResult {
   height: number;
   style: string;
   timestamp: string;
+  qualityMode?: 'economy' | 'standard' | 'ultra';
+  guidanceScale?: number;
+  steps?: number;
+  autoHD?: boolean;
+  autoOptimize?: boolean;
 }
