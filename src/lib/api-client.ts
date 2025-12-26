@@ -1,4 +1,4 @@
-// Enhanced Pollinations API Client with HD Optimization
+// Enhanced Pollinations API Client with HD Optimization and Reference Images
 import { CONFIG, type GenerationOptions, type GenerationResult } from './flux-config';
 
 interface EnhancedGenerationOptions extends GenerationOptions {
@@ -81,6 +81,16 @@ export class PollinationsClient {
     return `${prompt}, ${hdBoost}`;
   }
 
+  /**
+   * Upload reference image to a temporary host (if needed)
+   * For Pollinations, we can use data URLs directly
+   */
+  private async uploadReferenceImage(dataUrl: string): Promise<string> {
+    // Pollinations supports direct data URLs
+    // For optimization, you could upload to a CDN here
+    return dataUrl;
+  }
+
   async generate(options: EnhancedGenerationOptions): Promise<GenerationResult[]> {
     const {
       prompt,
@@ -153,6 +163,14 @@ export class PollinationsClient {
 
     const results: GenerationResult[] = [];
 
+    // Process reference images if provided
+    let processedReferenceImages: string[] = [];
+    if (referenceImages && referenceImages.length > 0) {
+      processedReferenceImages = await Promise.all(
+        referenceImages.map(img => this.uploadReferenceImage(img))
+      );
+    }
+
     for (let i = 0; i < numOutputs; i++) {
       const currentSeed = seed === -1 ? Math.floor(Math.random() * 1000000) : seed + i;
       
@@ -174,9 +192,11 @@ export class PollinationsClient {
         params.append('steps', finalSteps.toString());
       }
 
-      // 圖生圖支持
-      if (referenceImages.length > 0) {
-        params.append('image', referenceImages.join(','));
+      // 圖生圖支持 - For Kontext model
+      if (processedReferenceImages.length > 0 && model === 'kontext') {
+        // Pollinations supports reference images via 'image' parameter
+        // Format: comma-separated URLs or data URLs
+        params.append('image', processedReferenceImages[0]); // Use first reference image
       }
 
       const url = `${this.endpoint}/image/${encodeURIComponent(fullPrompt)}?${params.toString()}`;
@@ -191,27 +211,37 @@ export class PollinationsClient {
         headers['Authorization'] = `Bearer ${this.apiKey}`;
       }
 
-      const response = await fetch(url, {
-        method: 'GET',
-        headers
-      });
+      try {
+        const response = await fetch(url, {
+          method: 'GET',
+          headers,
+          signal: AbortSignal.timeout(CONFIG.FETCH_TIMEOUT)
+        });
 
-      if (!response.ok) {
-        throw new Error(`API request failed: ${response.status} ${response.statusText}`);
+        if (!response.ok) {
+          throw new Error(`API request failed: ${response.status} ${response.statusText}`);
+        }
+
+        const blob = await response.blob();
+        const imageUrl = URL.createObjectURL(blob);
+
+        results.push({
+          url: imageUrl,
+          model,
+          seed: currentSeed,
+          width,
+          height,
+          style,
+          timestamp: new Date().toISOString()
+        });
+      } catch (error) {
+        console.error(`Failed to generate image ${i + 1}:`, error);
+        throw new Error(
+          error instanceof Error 
+            ? `生成失敗: ${error.message}` 
+            : '圖像生成失敗，請稍後重試'
+        );
       }
-
-      const blob = await response.blob();
-      const imageUrl = URL.createObjectURL(blob);
-
-      results.push({
-        url: imageUrl,
-        model,
-        seed: currentSeed,
-        width,
-        height,
-        style,
-        timestamp: new Date().toISOString()
-      });
     }
 
     return results;
