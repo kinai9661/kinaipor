@@ -8,7 +8,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGr
 import { PollinationsClient } from '@/lib/api-client';
 import { HistoryManager, type HistoryItem } from '@/lib/storage';
 import { CONFIG, type Model, type Style, type SizePreset } from '@/lib/flux-config';
-import { Loader2, Sparkles } from 'lucide-react';
+import { Translator } from '@/lib/translator';
+import ImageUpload from './ImageUpload';
+import AdvancedSettings from './AdvancedSettings';
+import { Loader2, Sparkles, Languages } from 'lucide-react';
 
 interface FluxGeneratorProps {
   reuseData?: HistoryItem | null;
@@ -26,6 +29,22 @@ export default function FluxGenerator({ reuseData }: FluxGeneratorProps) {
   const [generatedImages, setGeneratedImages] = useState<Array<{ url: string; seed: number }>>([]);
   const [error, setError] = useState<string | null>(null);
 
+  // 進階參數
+  const [qualityMode, setQualityMode] = useState<'economy' | 'standard' | 'ultra'>('standard');
+  const [guidance, setGuidance] = useState(7.5);
+  const [steps, setSteps] = useState(20);
+  const [autoOptimize, setAutoOptimize] = useState(true);
+  const [enhance, setEnhance] = useState(false);
+  
+  // 圖生圖
+  const [referenceImages, setReferenceImages] = useState<string[]>([]);
+  
+  // 翻譯
+  const [enableTranslation, setEnableTranslation] = useState(true);
+  const [isTranslating, setIsTranslating] = useState(false);
+  const [translatedPrompt, setTranslatedPrompt] = useState('');
+  const translator = new Translator('', false); // 可配置 Workers endpoint
+
   // 重用數據
   useEffect(() => {
     if (reuseData) {
@@ -35,7 +54,6 @@ export default function FluxGenerator({ reuseData }: FluxGeneratorProps) {
       setSeed(reuseData.seed);
       setNegativePrompt(reuseData.negativePrompt || '');
       
-      // 嘗試匹配尺寸
       const matchedSize = Object.entries(CONFIG.PRESET_SIZES).find(
         ([_, size]) => size.width === reuseData.width && size.height === reuseData.height
       );
@@ -44,6 +62,27 @@ export default function FluxGenerator({ reuseData }: FluxGeneratorProps) {
       }
     }
   }, [reuseData]);
+
+  // 自動翻譯
+  useEffect(() => {
+    if (enableTranslation && prompt && translator.needsTranslation(prompt)) {
+      const translateDebounced = setTimeout(async () => {
+        setIsTranslating(true);
+        try {
+          const result = await translator.translate({ text: prompt });
+          setTranslatedPrompt(result.translatedText);
+        } catch (error) {
+          console.warn('Translation failed:', error);
+        } finally {
+          setIsTranslating(false);
+        }
+      }, 500);
+
+      return () => clearTimeout(translateDebounced);
+    } else {
+      setTranslatedPrompt('');
+    }
+  }, [prompt, enableTranslation]);
 
   const handleGenerate = async () => {
     if (!prompt.trim()) {
@@ -59,15 +98,24 @@ export default function FluxGenerator({ reuseData }: FluxGeneratorProps) {
       const sizeConfig = CONFIG.PRESET_SIZES[sizePreset];
       const client = new PollinationsClient();
       
+      // 使用翻譯後的提示詞（如果有）
+      const finalPrompt = translatedPrompt || prompt;
+      
       const results = await client.generate({
-        prompt,
+        prompt: finalPrompt,
         model,
         width: sizeConfig.width,
         height: sizeConfig.height,
         style,
         seed,
         negativePrompt,
-        numOutputs
+        qualityMode,
+        numOutputs,
+        referenceImages,
+        guidance,
+        steps,
+        enhance,
+        autoOptimize
       });
 
       setGeneratedImages(results.map(r => ({ url: r.url, seed: r.seed })));
@@ -76,9 +124,9 @@ export default function FluxGenerator({ reuseData }: FluxGeneratorProps) {
       results.forEach(result => {
         HistoryManager.addToHistory({
           ...result,
-          prompt,
+          prompt: finalPrompt,
           negativePrompt,
-          qualityMode: 'standard'
+          qualityMode
         });
       });
     } catch (err) {
@@ -90,6 +138,7 @@ export default function FluxGenerator({ reuseData }: FluxGeneratorProps) {
 
   const styleConfig = CONFIG.STYLE_PRESETS[style];
   const sizeConfig = CONFIG.PRESET_SIZES[sizePreset];
+  const modelConfig = CONFIG.PROVIDERS.pollinations.models.find(m => m.id === model);
 
   // 按分類組織風格
   const stylesByCategory = Object.entries(CONFIG.STYLE_PRESETS).reduce((acc, [key, value]) => {
@@ -127,7 +176,7 @@ export default function FluxGenerator({ reuseData }: FluxGeneratorProps) {
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground mt-1">
-              {CONFIG.PROVIDERS.pollinations.models.find(m => m.id === model)?.description}
+              {modelConfig?.description}
             </p>
           </div>
 
@@ -198,6 +247,29 @@ export default function FluxGenerator({ reuseData }: FluxGeneratorProps) {
             />
           </div>
 
+          {/* 圖生圖 */}
+          {modelConfig?.supports_reference_images && (
+            <ImageUpload
+              onImagesChange={setReferenceImages}
+              maxImages={modelConfig.max_reference_images || 1}
+              currentImages={referenceImages}
+            />
+          )}
+
+          {/* 進階設定 */}
+          <AdvancedSettings
+            qualityMode={qualityMode}
+            onQualityModeChange={setQualityMode}
+            guidance={guidance}
+            onGuidanceChange={setGuidance}
+            steps={steps}
+            onStepsChange={setSteps}
+            autoOptimize={autoOptimize}
+            onAutoOptimizeChange={setAutoOptimize}
+            enhance={enhance}
+            onEnhanceChange={setEnhance}
+          />
+
           <Button 
             onClick={handleGenerate} 
             disabled={isGenerating}
@@ -235,6 +307,9 @@ export default function FluxGenerator({ reuseData }: FluxGeneratorProps) {
             <div className="text-center py-12">
               <Loader2 className="h-12 w-12 animate-spin mx-auto mb-4 text-primary" />
               <p className="text-muted-foreground">正在生成圖像，請稍候...</p>
+              <p className="text-xs text-muted-foreground mt-2">
+                {qualityMode === 'ultra' ? '超高清模式，需要較長時間' : '預計 10-30 秒'}
+              </p>
             </div>
           )}
 
@@ -256,6 +331,9 @@ export default function FluxGenerator({ reuseData }: FluxGeneratorProps) {
                 <div className="absolute bottom-2 right-2 bg-black/70 text-white px-2 py-1 rounded text-xs">
                   Seed: {img.seed}
                 </div>
+                <div className="absolute top-2 left-2 bg-black/70 text-white px-2 py-1 rounded text-xs">
+                  {qualityMode.toUpperCase()}
+                </div>
               </div>
             ))}
           </div>
@@ -269,7 +347,22 @@ export default function FluxGenerator({ reuseData }: FluxGeneratorProps) {
         </CardHeader>
         <CardContent className="space-y-4">
           <div>
-            <Label>正面提示詞</Label>
+            <div className="flex justify-between items-center mb-1">
+              <Label>正面提示詞</Label>
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id="enableTranslation"
+                  checked={enableTranslation}
+                  onChange={(e) => setEnableTranslation(e.target.checked)}
+                  className="rounded"
+                />
+                <Label htmlFor="enableTranslation" className="text-xs cursor-pointer flex items-center">
+                  <Languages className="h-3 w-3 mr-1" />
+                  翻譯
+                </Label>
+              </div>
+            </div>
             <Textarea 
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
@@ -279,10 +372,22 @@ export default function FluxGenerator({ reuseData }: FluxGeneratorProps) {
 • A beautiful sunset over mountains
 • 一隻可愛的貓咆在花園裡玩耶
 • Cyberpunk city at night"
-              rows={8}
+              rows={6}
               className="font-mono"
             />
             <p className="text-xs text-green-500 mt-1">✅ 支持中文</p>
+            {isTranslating && (
+              <p className="text-xs text-blue-500 mt-1">
+                <Loader2 className="inline h-3 w-3 animate-spin mr-1" />
+                正在翻譯...
+              </p>
+            )}
+            {translatedPrompt && (
+              <div className="mt-2 p-2 bg-blue-500/10 border border-blue-500 rounded text-xs">
+                <p className="font-semibold mb-1">🌍 翻譯結果：</p>
+                <p className="text-muted-foreground">{translatedPrompt}</p>
+              </div>
+            )}
           </div>
 
           <div>
@@ -294,7 +399,7 @@ export default function FluxGenerator({ reuseData }: FluxGeneratorProps) {
 
 例如：
 blurry, low quality, distorted"
-              rows={4}
+              rows={3}
               className="font-mono"
             />
           </div>
@@ -307,9 +412,12 @@ blurry, low quality, distorted"
 
           <div className="bg-blue-500/10 border border-blue-500 rounded p-3">
             <p className="text-sm font-semibold mb-1">📋 當前配置</p>
-            <p className="text-xs">模型：{CONFIG.PROVIDERS.pollinations.models.find(m => m.id === model)?.name}</p>
+            <p className="text-xs">模型：{modelConfig?.name}</p>
             <p className="text-xs">尺寸：{sizeConfig.name}</p>
             <p className="text-xs">風格：{styleConfig.name}</p>
+            <p className="text-xs">質量：{qualityMode}</p>
+            {autoOptimize && <p className="text-xs">⚙️ 自動優化：開啟</p>}
+            {enhance && <p className="text-xs">✨ HD 增強：開啟</p>}
           </div>
         </CardContent>
       </Card>
