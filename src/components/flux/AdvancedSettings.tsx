@@ -1,10 +1,8 @@
-import { useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Button } from '@/components/ui/button';
-import { ChevronDown, ChevronUp } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Settings, Zap } from 'lucide-react';
 
 interface AdvancedSettingsProps {
   qualityMode: 'economy' | 'standard' | 'ultra';
@@ -31,49 +29,59 @@ export default function AdvancedSettings({
   enhance,
   onEnhanceChange
 }: AdvancedSettingsProps) {
-  const [isExpanded, setIsExpanded] = useState(false);
-
   return (
     <Card>
-      <CardHeader>
-        <div className="flex justify-between items-center">
-          <CardTitle className="text-base">⚙️ 進階設定</CardTitle>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setIsExpanded(!isExpanded)}
-          >
-            {isExpanded ? (
-              <ChevronUp className="h-4 w-4" />
-            ) : (
-              <ChevronDown className="h-4 w-4" />
-            )}
-          </Button>
-        </div>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-sm flex items-center">
+          <Settings className="h-4 w-4 mr-2" />
+          進階設定
+        </CardTitle>
       </CardHeader>
-      {isExpanded && (
-        <CardContent className="space-y-4">
-          <div>
-            <Label>質量模式</Label>
-            <Select value={qualityMode} onValueChange={(v) => onQualityModeChange(v as any)}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="economy">經濟模式 (快速)</SelectItem>
-                <SelectItem value="standard">標準模式 (平衡)</SelectItem>
-                <SelectItem value="ultra">超高清模式 (極致)</SelectItem>
-              </SelectContent>
-            </Select>
-            <p className="text-xs text-muted-foreground mt-1">
-              {qualityMode === 'economy' && '快速生成，適合測試'}
-              {qualityMode === 'standard' && '平衡質量與速度'}
-              {qualityMode === 'ultra' && '最高質量，較慢'}
-            </p>
-          </div>
+      <CardContent className="space-y-3">
+        {/* 質量模式 */}
+        <div>
+          <Label className="text-xs">質量模式</Label>
+          <Select value={qualityMode} onValueChange={onQualityModeChange}>
+            <SelectTrigger className="h-8">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="economy">Economy (快速)</SelectItem>
+              <SelectItem value="standard">Standard (標準)</SelectItem>
+              <SelectItem value="ultra">Ultra (超高清)</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
 
+        {/* 自動優化 */}
+        <div className="flex items-center justify-between">
+          <Label className="text-xs flex items-center">
+            <Zap className="h-3 w-3 mr-1" />
+            自動優化參數
+          </Label>
+          <input
+            type="checkbox"
+            checked={autoOptimize}
+            onChange={(e) => onAutoOptimizeChange(e.target.checked)}
+            className="rounded"
+          />
+        </div>
+
+        {/* HD 增強 */}
+        <div className="flex items-center justify-between">
+          <Label className="text-xs">✨ HD 增強</Label>
+          <input
+            type="checkbox"
+            checked={enhance}
+            onChange={(e) => onEnhanceChange(e.target.checked)}
+            className="rounded"
+          />
+        </div>
+
+        {/* Guidance Scale */}
+        {!autoOptimize && (
           <div>
-            <Label>Guidance Scale: {guidance}</Label>
+            <Label className="text-xs">Guidance Scale: {guidance}</Label>
             <Input
               type="range"
               min="1"
@@ -81,15 +89,18 @@ export default function AdvancedSettings({
               step="0.5"
               value={guidance}
               onChange={(e) => onGuidanceChange(parseFloat(e.target.value))}
-              className="cursor-pointer"
+              className="h-2"
             />
             <p className="text-xs text-muted-foreground mt-1">
-              控制圖像與提示詞的匹配度 (1-20)
+              較高值更符合提示詞
             </p>
           </div>
+        )}
 
+        {/* Steps */}
+        {!autoOptimize && (
           <div>
-            <Label>Steps: {steps}</Label>
+            <Label className="text-xs">生成步數: {steps}</Label>
             <Input
               type="range"
               min="4"
@@ -97,56 +108,26 @@ export default function AdvancedSettings({
               step="1"
               value={steps}
               onChange={(e) => onStepsChange(parseInt(e.target.value))}
-              className="cursor-pointer"
+              className="h-2"
             />
             <p className="text-xs text-muted-foreground mt-1">
-              生成步驟數 (4-50)，更多步驟 = 更高質量
+              較高值質量更好但更慢
             </p>
           </div>
+        )}
 
-          <div className="space-y-2">
-            <div className="flex items-center space-x-2">
-              <input
-                type="checkbox"
-                id="autoOptimize"
-                checked={autoOptimize}
-                onChange={(e) => onAutoOptimizeChange(e.target.checked)}
-                className="rounded"
-              />
-              <Label htmlFor="autoOptimize" className="cursor-pointer">
-                自動優化參數
-              </Label>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              根據模型和尺寸自動調整 steps 和 guidance
+        {/* 提示信息 */}
+        {autoOptimize && (
+          <div className="bg-blue-500/10 border border-blue-500 rounded p-2">
+            <p className="text-xs text-blue-500">
+              ⚙️ 自動優化已啟用
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              參數將根據模型、尺寸和風格自動調整
             </p>
           </div>
-
-          <div className="space-y-2">
-            <div className="flex items-center space-x-2">
-              <input
-                type="checkbox"
-                id="enhance"
-                checked={enhance}
-                onChange={(e) => onEnhanceChange(e.target.checked)}
-                className="rounded"
-              />
-              <Label htmlFor="enhance" className="cursor-pointer">
-                HD 增強
-              </Label>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              自動添加高清優化提示詞
-            </p>
-          </div>
-
-          <div className="bg-blue-500/10 border border-blue-500 rounded p-3">
-            <p className="text-xs">
-              💡 <strong>建議</strong>：初次使用建議保持預設設定，然後根據需要調整。
-            </p>
-          </div>
-        </CardContent>
-      )}
+        )}
+      </CardContent>
     </Card>
   );
 }
