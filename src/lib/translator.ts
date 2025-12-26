@@ -1,10 +1,15 @@
-// Translator using Workers AI or other translation services
-// For now, provides a placeholder implementation
+// Simple Translator Client (Placeholder for Workers AI)
+// Can be integrated with Cloudflare Workers AI in the future
 
 export interface TranslationResult {
-  originalText: string;
   translatedText: string;
-  detectedLanguage: string;
+  detectedLanguage?: string;
+}
+
+export interface TranslationOptions {
+  text: string;
+  sourceLang?: string;
+  targetLang?: string;
 }
 
 export class Translator {
@@ -17,40 +22,36 @@ export class Translator {
   }
 
   /**
-   * Check if text needs translation (contains Chinese characters)
+   * Detect if text needs translation (contains Chinese characters)
    */
   needsTranslation(text: string): boolean {
-    // Check for Chinese characters
+    // Check if text contains Chinese characters
     const chineseRegex = /[\u4e00-\u9fa5]/;
     return chineseRegex.test(text);
   }
 
   /**
    * Translate text from Chinese to English
-   * 
-   * Note: This is a placeholder. For production, integrate:
-   * - Cloudflare Workers AI (@cf/meta/m2m100-1.2b)
+   * Note: This is a placeholder. In production, integrate with:
+   * - Cloudflare Workers AI
    * - Google Translate API
    * - DeepL API
+   * - Or any translation service
    */
-  async translate(options: { text: string }): Promise<TranslationResult> {
-    const { text } = options;
+  async translate(options: TranslationOptions): Promise<TranslationResult> {
+    const { text, sourceLang = 'zh', targetLang = 'en' } = options;
 
     // If translation is disabled or no Workers endpoint, return original
     if (!this.enabled || !this.workersEndpoint) {
+      // Fallback: Use a simple client-side approach or return original
       return {
-        originalText: text,
         translatedText: text,
-        detectedLanguage: 'zh'
+        detectedLanguage: sourceLang
       };
     }
 
     try {
-      // Placeholder for Workers AI translation
-      // TODO: Implement actual translation API call
-      
-      // Example implementation (commented out):
-      /*
+      // Call Workers AI translation endpoint
       const response = await fetch(this.workersEndpoint, {
         method: 'POST',
         headers: {
@@ -58,37 +59,44 @@ export class Translator {
         },
         body: JSON.stringify({
           text,
-          source_lang: 'zh',
-          target_lang: 'en'
+          source_lang: sourceLang,
+          target_lang: targetLang
         })
       });
 
       if (!response.ok) {
-        throw new Error('Translation failed');
+        throw new Error('Translation API failed');
       }
 
       const data = await response.json();
       return {
-        originalText: text,
-        translatedText: data.translated_text,
-        detectedLanguage: 'zh'
-      };
-      */
-
-      // For now, return original text
-      console.warn('Translation not implemented, returning original text');
-      return {
-        originalText: text,
-        translatedText: text,
-        detectedLanguage: 'zh'
+        translatedText: data.translated_text || text,
+        detectedLanguage: data.detected_language || sourceLang
       };
     } catch (error) {
       console.error('Translation error:', error);
+      // Fallback to original text
       return {
-        originalText: text,
         translatedText: text,
-        detectedLanguage: 'zh'
+        detectedLanguage: sourceLang
       };
     }
   }
+
+  /**
+   * Batch translate multiple texts
+   */
+  async translateBatch(texts: string[]): Promise<TranslationResult[]> {
+    return Promise.all(texts.map(text => this.translate({ text })));
+  }
+}
+
+/**
+ * Simple browser-based translation (very basic)
+ * For production, use proper translation API
+ */
+export async function simpleTranslate(text: string): Promise<string> {
+  // This is just a placeholder
+  // In production, integrate with a real translation service
+  return text;
 }
